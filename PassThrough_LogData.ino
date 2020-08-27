@@ -46,7 +46,11 @@ static const int RXPin = 11, TXPin = 10; //variables for GPS
 static const uint32_t GPSBaud = 9600;
 float Lat, Lng;
 int Sat, Month, Day, Year, Hour, Minute, Sec;
-double gsMPH, gsKnots, gsMPS, gpsALT_m, gpsALT_ft, Heading;
+double gsMPH, gsKnots, gsMPS, gpsALT_m, gpsALT_ft, gpsHeading;
+
+const int currentPin = A14, voltagePin = A15, airspeedPin = A7; // varibles for analog instruments
+int rawC, rawV, rawAS;
+float current, voltage, airspeed, airspeedcali;
 
 //Create servo offsets
 int ALE_offset = 2;
@@ -84,6 +88,11 @@ void setup() {
   bmp180.begin();
   getBMP180();
   P0 = P;
+  pinMode(currentPin,INPUT);
+  pinMode(voltagePin,INPUT);
+  pinMode(airspeedPin,INPUT);
+  readAirSpeed();
+  airspeedcali = airspeed;
   ss.begin(GPSBaud);
   Servo_ALE.attach(9);
   Servo_ELE.attach(8);
@@ -99,7 +108,7 @@ void setup() {
 }
 //*******Main Loop*******
 void loop() {
-  currentTime = micros(); //too not overload the loop function some processes will be timed
+  currentTime = micros(); //to not overload the loop function some processes will be timed
   if (abs(currentTime - previousTime) > 5e5) { //every half second run these processes
     DataWrite();
     previousTime = currentTime;
@@ -107,6 +116,8 @@ void loop() {
   if (abs(currentTime - previousTime1) > 25e4) { //every quarter second read instruments
     getBMP180();
     GPSread();
+    readPower();
+    readAirSpeed();
     previousTime1 = currentTime;
   }
   RX_READ();
@@ -191,7 +202,7 @@ void numOfFiles(File dir) {
   dir.close();
 }
 void DataWrite () { //write all data you want to save here
-  dataFile = SD.open(fileName, FILE_WRITE);
+  dataFile = SD.open(fileName, FILE_WRITE); // note opening a file can take up to 50 ms (normally 15ms)
   if (dataFile) { 
     dataFile.print(currentTime); //current time (Micros)
     dataFile.print("|");
@@ -213,35 +224,41 @@ void DataWrite () { //write all data you want to save here
     dataFile.print("|");
     dataFile.print(channels[8]); //input flightmode
     dataFile.print("|");
-    dataFile.print(P);
+    dataFile.print(P); // pressure
     dataFile.print("|");
-    dataFile.print(T);
+    dataFile.print(T); //temperature
     dataFile.print("|");
-    dataFile.print(altAGL);
+    dataFile.print(altAGL); //baro-altitude
     dataFile.print("|");
-    dataFile.print(Day);
+    dataFile.print(Day); //day
     dataFile.print("|");
-    dataFile.print(Month);
+    dataFile.print(Month);//month
     dataFile.print("|");
-    dataFile.print(Year);
+    dataFile.print(Year); //year
     dataFile.print("|");
-    dataFile.print(Hour);
+    dataFile.print(Hour);  //hour
     dataFile.print("|");
-    dataFile.print(Minute);
+    dataFile.print(Minute);  //minute
     dataFile.print("|");
-    dataFile.print(Sec);
+    dataFile.print(Sec); //second
     dataFile.print("|");
-    dataFile.print(Lat,6);
+    dataFile.print(Lat,6); //latitude
     dataFile.print("|");
-    dataFile.print(Lng,6);
+    dataFile.print(Lng,6); //longitude
     dataFile.print("|");
-    dataFile.print(Heading);
+    dataFile.print(gpsHeading); //gps heading
     dataFile.print("|");
-    dataFile.print(gpsALT_ft);
+    dataFile.print(gpsALT_ft); //gps altitude in feet
     dataFile.print("|");
-    dataFile.print(gsMPH);
+    dataFile.print(gsMPH); // gps ground speed in miles per hour
     dataFile.print("|");
-    dataFile.print(Sat);
+    dataFile.print(Sat); //amount of satellites for gps
+    dataFile.print("|");
+    dataFile.print(voltage); //battery voltage
+    dataFile.print("|");
+    dataFile.print(current); //current drawn from battery
+    dataFile.print("|");
+    dataFile.print(airspeed); //indicated airspeed
     dataFile.println("|"); //finish with println
     dataFile.close(); //close file
   }
@@ -289,7 +306,7 @@ void GPSInfo() {
     Sat = gps.satellites.value();
   }
   if (gps.course.isValid()) { // heading
-    Heading = gps.course.deg();
+    gpsHeading = gps.course.deg();
   }
   if (gps.speed.isValid()) { //ground speed
     gsMPH = gps.speed.mph();
@@ -309,6 +326,17 @@ void GPSread() {
   if (millis() > 5000 && gps.charsProcessed() < 10) {
     Serial.println("Error Reading GPS");
   }
+}
+void readPower() {
+  rawC = analogRead(currentPin);
+  current = rawC / 11.0;
+  rawV = analogRead(voltagePin);
+  voltage = rawV / 19.93;
+}
+void readAirSpeed() {
+   rawAS = analogRead(airspeedPin);
+   airspeed = sqrt((1.63265)*((0.0048828125*rawAS*1000)-2.5));
+   airspeed = airspeed - airspeedcali;
 }
 void preflightWarning() {
   Serial.println("Preflight Warning!");
